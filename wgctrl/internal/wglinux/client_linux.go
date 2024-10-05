@@ -4,6 +4,7 @@
 package wglinux
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -136,6 +137,8 @@ func (c *Client) ConfigureDevice(name string, cfg wgtypes.Config) error {
 		// Request acknowledgement of our request from netlink, even though the
 		// output messages are unused.  The netlink package checks and trims the
 		// status code value.
+		fmt.Println("yama_debug:EXECUTED: cfg:", cfg)
+		fmt.Println("yama_debug:EXECUTED: attrs:", attrs)
 		if _, err := c.execute(unix.WG_CMD_SET_DEVICE, netlink.Request|netlink.Acknowledge, attrs); err != nil {
 			return err
 		}
@@ -154,6 +157,8 @@ func (c *Client) execute(command uint8, flags netlink.HeaderFlags, attrb []byte)
 		},
 		Data: attrb,
 	}
+
+	decodeAttributes(msg)
 
 	msgs, err := c.c.Execute(msg, c.family.ID, flags)
 	if err == nil {
@@ -176,6 +181,102 @@ func (c *Client) execute(command uint8, flags netlink.HeaderFlags, attrb []byte)
 	default:
 		// Expose the inner error directly (such as EPERM).
 		return nil, oerr.Err
+	}
+}
+
+func decodeAttributes(msg genetlink.Message) error {
+	ad, err := netlink.NewAttributeDecoder(msg.Data)
+	if err != nil {
+		return fmt.Errorf("failed to create attribute decoder: %v", err)
+	}
+
+	for ad.Next() {
+		switch ad.Type() {
+		case unix.WGDEVICE_A_IFNAME:
+			ifname := ad.String()
+			fmt.Printf("yama: Interface Name: %s\n", ifname)
+		case unix.WGDEVICE_A_LISTEN_PORT:
+			listenPort := ad.Uint16()
+			fmt.Printf("yama: Listen Port: %d\n", listenPort)
+		case unix.WGDEVICE_A_PEERS:
+			fmt.Println("yama: Peers:")
+			parsePeers(ad.Bytes())
+		default:
+			fmt.Printf("yama: Unknown Attribute Type: %d, Value: %v\n", ad.Type(), ad.Bytes())
+		}
+	}
+
+	if err := ad.Err(); err != nil {
+		return fmt.Errorf("failed to decode attributes: %v", err)
+	}
+
+	return nil
+}
+
+func parsePeers(data []byte) {
+	// data は WGDEVICE_A_PEERS 属性のデータであり、複数のピア属性を含む
+	attrs, err := netlink.UnmarshalAttributes(data)
+	if err != nil {
+		fmt.Printf("yama: Failed to unmarshal peers attributes: %v\n", err)
+		return
+	}
+
+	for _, attr := range attrs {
+		if attr.Type != unix.WGPEER_A_UNSPEC {
+			parsePeer2(attr.Data)
+		} else {
+			fmt.Println("yama: Peer: unspec")
+		}
+	}
+}
+
+func parsePeer2(data []byte) {
+	fmt.Println("yama: parsePeer2:")
+	attrs, err := netlink.UnmarshalAttributes(data)
+	if err != nil {
+		fmt.Printf("yama: Failed to unmarshal peer attributes: %v\n", err)
+		return
+	}
+
+	for _, attr := range attrs {
+		switch attr.Type {
+		case unix.WGPEER_A_PUBLIC_KEY:
+			publicKey := attr.Data
+			fmt.Printf("yama:   Peer Public Key: %x\n", publicKey)
+		case unix.WGPEER_A_PRESHARED_KEY:
+			presharedKey := attr.Data
+			fmt.Printf("yama:   Peer Preshared Key: %x\n", presharedKey)
+		case unix.WGPEER_A_ENDPOINT:
+			endpoint := attr.Data
+			fmt.Printf("yama:   Peer Endpoint: %v\n", endpoint)
+		case unix.WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL:
+			if len(attr.Data) >= 2 {
+				keepaliveInterval := binary.LittleEndian.Uint16(attr.Data)
+				fmt.Printf("yama:   Persistent Keepalive Interval: %d seconds\n", keepaliveInterval)
+			}
+		case unix.WGPEER_A_LAST_HANDSHAKE_TIME:
+			handshakeTimeData := attr.Data
+			fmt.Printf("yama:   Last Handshake Time: %v\n", handshakeTimeData)
+		case unix.WGPEER_A_RX_BYTES:
+			if len(attr.Data) >= 8 {
+				rxBytes := binary.LittleEndian.Uint64(attr.Data)
+				fmt.Printf("yama:   Received Bytes: %d\n", rxBytes)
+			}
+		case unix.WGPEER_A_TX_BYTES:
+			if len(attr.Data) >= 8 {
+				txBytes := binary.LittleEndian.Uint64(attr.Data)
+				fmt.Printf("yama:   Transmitted Bytes: %d\n", txBytes)
+			}
+		case unix.WGPEER_A_ALLOWEDIPS:
+			fmt.Println("yama:  Allowed IPs:")
+		case unix.WGPEER_A_PROTOCOL_VERSION:
+			if len(attr.Data) >= 4 {
+				protocolVersion := binary.LittleEndian.Uint32(attr.Data)
+				fmt.Printf("yama:   Protocol Version: %d\n", protocolVersion)
+			}
+		default:
+			fmt.Printf("yama:   Unknown Peer Attribute Type: %d, Value: %v\n", attr.Type, attr.Data)
+		}
 	}
 }
 
