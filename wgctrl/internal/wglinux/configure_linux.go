@@ -49,7 +49,8 @@ func configAttrs(name string, cfg wgtypes.Config) ([]byte, error) {
 		})
 	}
 
-	return ae.Encode()
+	attrBinary, err := ae.Encode()
+	return attrBinary, err
 }
 
 // ipBatchChunk is a tunable allowed IP batch limit per peer.
@@ -193,12 +194,27 @@ func encodePeer(p wgtypes.PeerConfig) func(ae *netlink.AttributeEncoder) error {
 			ae.Bytes(unix.WGPEER_A_PRESHARED_KEY, (*p.PresharedKey)[:])
 		}
 
+		attrBinary, err := ae.Encode()
+		if err == nil {
+			fmt.Printf("yama_debug: before encode PeerConfig: %v\n", attrBinary)
+		}
+
 		if p.Endpoint != nil {
+			fmt.Printf("yama_debug: before encode Endpoint: %v\n", p.Endpoint)
 			ae.Do(unix.WGPEER_A_ENDPOINT, encodeSockaddr(*p.Endpoint))
+			attrBinary, err := ae.Encode()
+			if err == nil {
+				fmt.Printf("yama_debug: after encode Endpoint: %v\n", attrBinary)
+			}
 		}
 
 		if p.PersistentKeepaliveInterval != nil {
+			fmt.Printf("yama_debug: before encode PersistentKeepaliveInterval: %v\n", p.PersistentKeepaliveInterval)
 			ae.Uint16(unix.WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL, uint16(p.PersistentKeepaliveInterval.Seconds()))
+			attrBinary, err := ae.Encode()
+			if err == nil {
+				fmt.Printf("yama_debug: after encode PersistentKeepaliveInterval: %v\n", attrBinary)
+			}
 		}
 
 		// Only apply allowed IPs if necessary.
