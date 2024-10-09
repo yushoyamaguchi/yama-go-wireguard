@@ -210,7 +210,9 @@ func encodePeer(p wgtypes.PeerConfig) func(ae *netlink.AttributeEncoder) error {
 
 		if p.PersistentKeepaliveInterval != nil {
 			fmt.Printf("yama_debug: before encode PersistentKeepaliveInterval: %v\n", p.PersistentKeepaliveInterval)
+			fmt.Printf("yama_debug: before encode PersistentKeepaliveInterval.Seconds(): %v\n", p.PersistentKeepaliveInterval.Seconds())
 			ae.Uint16(unix.WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL, uint16(p.PersistentKeepaliveInterval.Seconds()))
+			//ae.Uint16(unix.WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL, 23)
 			attrBinary, err := ae.Encode()
 			if err == nil {
 				fmt.Printf("yama_debug: after encode PersistentKeepaliveInterval: %v\n", attrBinary)
